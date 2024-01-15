@@ -7,7 +7,8 @@ import Cardano.Api.Shelley
 import Cardano.Ledger.Api.Tx.Body qualified as Ledger
 import Cardano.Ledger.Alonzo.TxWits qualified as Ledger
 import Cardano.Ledger.Alonzo.TxBody qualified as Ledger
-import Cardano.Ledger.Babbage.TxBody qualified as Ledger
+import Cardano.Ledger.Conway.TxBody qualified as Ledger
+import Cardano.Ledger.Core qualified as Ledger
 import Cardano.Ledger.Crypto (StandardCrypto)
 import Cardano.Ledger.Keys (WitVKey (..), coerceKeyRole, hashKey)
 import Cardano.Ledger.Allegra.Scripts (ValidityInterval (..))
@@ -25,7 +26,7 @@ import Data.Maybe.Strict
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Data.Word
 
-type Era = BabbageEra
+type Era = ConwayEra
 type LedgerEra = ShelleyLedgerEra Era
 
 addressOfTxOut :: TxOut ctx Era -> AddressAny
@@ -42,7 +43,7 @@ datumOfTxOut (TxOut _ _ datum _) = datum
 redeemerOfTxIn :: Tx Era -> TxIn -> Maybe ScriptData
 redeemerOfTxIn tx txIn = redeemer
   where
-    Tx (ShelleyTxBody _ Ledger.BabbageTxBody{Ledger.btbInputs=inputs} _ scriptData _ _) _ = tx
+    Tx (ShelleyTxBody _ Ledger.ConwayTxBody{Ledger.ctbSpendInputs=inputs} _ scriptData _ _) _ = tx
 
     redeemer = case scriptData of
       TxBodyNoScriptData -> Nothing
@@ -89,7 +90,7 @@ recomputeScriptData i f (TxBodyScriptData era dats (Ledger.Redeemers rdmrs)) =
         idxFilter (Ledger.AlonzoRewarding (Ledger.AsIndex idx)) _ = Just idx /= i
 
 emptyTxBodyScriptData :: TxBodyScriptData Era
-emptyTxBodyScriptData = TxBodyScriptData AlonzoEraOnwardsBabbage (Ledger.TxDats mempty) (Ledger.Redeemers mempty)
+emptyTxBodyScriptData = TxBodyScriptData AlonzoEraOnwardsConway (Ledger.TxDats mempty) (Ledger.Redeemers mempty)
 
 addScriptData :: Word32
               -> Ledger.Data (ShelleyLedgerEra Era)
@@ -118,7 +119,7 @@ toCtxUTxODatum d = case d of
 
 -- | Convert ScriptData to a `Test.QuickCheck.ContractModel.ThreatModel.Datum`.
 txOutDatum :: ScriptData -> TxOutDatum CtxTx Era
-txOutDatum d = TxOutDatumInTx AlonzoEraOnwardsBabbage (unsafeHashableScriptData d)
+txOutDatum d = TxOutDatumInTx AlonzoEraOnwardsConway (unsafeHashableScriptData d)
 
 -- | Convert a Haskell value to ScriptData for use as a
 -- `Test.QuickCheck.ContractModel.ThreatModel.Redeemer` or convert to a
@@ -188,7 +189,7 @@ validateTx pparams tx utxos = case result of
                                  [show e | Left e <- Map.elems report]
   where
     result = evaluateTransactionExecutionUnits
-                BabbageEra
+                ConwayEra
                 systemStart
                 (toLedgerEpochInfo eraHistory)
                 pparams

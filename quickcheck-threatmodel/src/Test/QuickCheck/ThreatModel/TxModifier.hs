@@ -4,8 +4,7 @@ module Test.QuickCheck.ThreatModel.TxModifier where
 import Cardano.Api
 import Cardano.Api.Shelley
 import Cardano.Ledger.Alonzo.TxWits qualified as Ledger
-import Cardano.Ledger.Alonzo.TxBody qualified as Ledger
-import Cardano.Ledger.Babbage.TxBody qualified as Ledger
+import Cardano.Ledger.Conway.TxBody qualified as Ledger
 import Cardano.Ledger.Binary qualified as CBOR
 import Cardano.Ledger.Api.Era (eraProtVerLow)
 import Data.Coerce
@@ -131,37 +130,37 @@ applyTxModifier tx utxos (TxModifier ms) = foldl (uncurry applyTxMod) (tx, utxos
 applyTxMod :: Tx Era -> UTxO Era -> TxMod -> (Tx Era, UTxO Era)
 
 applyTxMod tx utxos (ChangeValidityRange mlo mhi) =
-    (Tx (ShelleyTxBody era body{Ledger.btbValidityInterval=validity'} scripts scriptData auxData scriptValidity) wits, utxos)
+    (Tx (ShelleyTxBody era body{Ledger.ctbVldt=validity'} scripts scriptData auxData scriptValidity) wits, utxos)
   where
     Tx bdy@(ShelleyTxBody era body scripts scriptData auxData scriptValidity) wits = tx
     TxBody TxBodyContent{txValidityLowerBound = lo, txValidityUpperBound = hi} = bdy
     validity' = convValidityInterval (fromMaybe lo mlo, fromMaybe hi mhi)
 
 applyTxMod tx utxos (RemoveInput i) =
-    (Tx (ShelleyTxBody era body{Ledger.btbInputs = inputs'} scripts scriptData' auxData validity) wits, utxos)
+    (Tx (ShelleyTxBody era body{Ledger.ctbSpendInputs = inputs'} scripts scriptData' auxData validity) wits, utxos)
   where
-    Tx (ShelleyTxBody era body@Ledger.BabbageTxBody{..} scripts scriptData auxData validity) wits = tx
-    inputs' = Set.delete (toShelleyTxIn i) btbInputs
-    SJust (Ledger.AsIndex idx) = Ledger.indexOf (Ledger.AsItem (toShelleyTxIn i)) btbInputs
+    Tx (ShelleyTxBody era body@Ledger.ConwayTxBody{..} scripts scriptData auxData validity) wits = tx
+    inputs' = Set.delete (toShelleyTxIn i) ctbSpendInputs
+    SJust (Ledger.AsIndex idx) = Ledger.indexOf (Ledger.AsItem (toShelleyTxIn i)) ctbSpendInputs
     idxUpdate idx'
       | idx' > idx = idx' - 1
       | otherwise  = idx'
     scriptData' = recomputeScriptData (Just idx) idxUpdate scriptData
 
 applyTxMod tx utxos (RemoveOutput (TxIx i)) =
-    (Tx (ShelleyTxBody era body{Ledger.btbOutputs = outputs'} scripts scriptData auxData validity) wits, utxos)
+    (Tx (ShelleyTxBody era body{Ledger.ctbOutputs = outputs'} scripts scriptData auxData validity) wits, utxos)
   where
-    Tx (ShelleyTxBody era body@Ledger.BabbageTxBody{..} scripts scriptData auxData validity) wits = tx
-    outputs' = case Seq.splitAt (fromIntegral i) btbOutputs of
+    Tx (ShelleyTxBody era body@Ledger.ConwayTxBody{..} scripts scriptData auxData validity) wits = tx
+    outputs' = case Seq.splitAt (fromIntegral i) ctbOutputs of
                  (before, _ Seq.:<| after) -> before <> after
                  (_, Seq.Empty)            -> error $ "RemoveOutput: Can't remove index " ++ show i ++ " from "
-                                                   ++ show (Seq.length btbOutputs) ++ " outputs"
+                                                   ++ show (Seq.length ctbOutputs) ++ " outputs"
 
 applyTxMod tx utxos (AddOutput addr value datum) =
-    (Tx (ShelleyTxBody era body{Ledger.btbOutputs = outputs'} scripts scriptData' auxData validity) wits, utxos)
+    (Tx (ShelleyTxBody era body{Ledger.ctbOutputs = outputs'} scripts scriptData' auxData validity) wits, utxos)
   where
-    Tx (ShelleyTxBody era body@Ledger.BabbageTxBody{..} scripts scriptData auxData validity) wits = tx
-    outputs' = btbOutputs Seq.:|> CBOR.mkSized (eraProtVerLow @LedgerEra) out
+    Tx (ShelleyTxBody era body@Ledger.ConwayTxBody{..} scripts scriptData auxData validity) wits = tx
+    outputs' = ctbOutputs Seq.:|> CBOR.mkSized (eraProtVerLow @LedgerEra) out
     out = toShelleyTxOut shelleyBasedEra (makeTxOut addr value datum ReferenceScriptNone)
     scriptData' = case datum of
       TxOutDatumNone       -> scriptData
@@ -170,15 +169,15 @@ applyTxMod tx utxos (AddOutput addr value datum) =
       TxOutDatumInline _ d -> addDatum (toAlonzoData d) scriptData
 
 applyTxMod tx utxos (AddInput addr value datum) =
-    ( Tx (ShelleyTxBody era body{Ledger.btbInputs = inputs'} scripts scriptData'' auxData validity) wits
+    ( Tx (ShelleyTxBody era body{Ledger.ctbSpendInputs = inputs'} scripts scriptData'' auxData validity) wits
     , utxos' )
   where
-    Tx (ShelleyTxBody era body@Ledger.BabbageTxBody{..} scripts scriptData auxData validity) wits = tx
+    Tx (ShelleyTxBody era body@Ledger.ConwayTxBody{..} scripts scriptData auxData validity) wits = tx
 
     txIn    = TxIn dummyTxId (TxIx txIx)
     txIx    = maximum $ 0 : map (+ 1) [ ix | TxIn txId (TxIx ix) <- Map.keys $ unUTxO utxos, txId == dummyTxId ]
     input   = toShelleyTxIn txIn
-    inputs' = Set.insert input btbInputs
+    inputs' = Set.insert input ctbSpendInputs
     SJust (Ledger.AsIndex idx) = Ledger.indexOf (Ledger.AsItem input) inputs'
 
     txOut   = makeTxOut addr value datum ReferenceScriptNone
@@ -197,20 +196,20 @@ applyTxMod tx utxos (AddInput addr value datum) =
     scriptData' = recomputeScriptData Nothing idxUpdate scriptData
 
 applyTxMod tx utxos (AddPlutusScriptInput script value datum redeemer) =
-    ( Tx (ShelleyTxBody era body{Ledger.btbInputs = inputs'} scripts' scriptData' auxData validity) wits
+    ( Tx (ShelleyTxBody era body{Ledger.ctbSpendInputs = inputs'} scripts' scriptData' auxData validity) wits
     , utxos' )
   where
-    Tx (ShelleyTxBody era body@Ledger.BabbageTxBody{..} scripts scriptData auxData validity) wits = tx
+    Tx (ShelleyTxBody era body@Ledger.ConwayTxBody{..} scripts scriptData auxData validity) wits = tx
 
     txIx   = maximum $ 0 : map (+ 1) [ ix | TxIn txId (TxIx ix) <- Map.keys $ unUTxO utxos, txId == dummyTxId ]
     txIn   = TxIn dummyTxId (TxIx txIx)
     input  = toShelleyTxIn txIn
-    inputs' = Set.insert input btbInputs
+    inputs' = Set.insert input ctbSpendInputs
 
     txOut  = makeTxOut addr value datum ReferenceScriptNone
     utxos' = UTxO . Map.insert txIn txOut . unUTxO $ utxos
 
-    scriptInEra = ScriptInEra PlutusScriptV2InBabbage
+    scriptInEra = ScriptInEra PlutusScriptV2InConway
                   (PlutusScript PlutusScriptV2 script)
     newScript = toShelleyScript @Era scriptInEra
     scripts'  = scripts ++ [newScript]
@@ -233,20 +232,20 @@ applyTxMod tx utxos (AddPlutusScriptInput script value datum redeemer) =
     addr = scriptAddressAny hash
 
 applyTxMod tx utxos (AddSimpleScriptInput script value) =
-    ( Tx (ShelleyTxBody era body{Ledger.btbInputs = inputs'} scripts' scriptData' auxData validity) wits
+    ( Tx (ShelleyTxBody era body{Ledger.ctbSpendInputs = inputs'} scripts' scriptData' auxData validity) wits
     , utxos' )
   where
-    Tx (ShelleyTxBody era body@Ledger.BabbageTxBody{..} scripts scriptData auxData validity) wits = tx
+    Tx (ShelleyTxBody era body@Ledger.ConwayTxBody{..} scripts scriptData auxData validity) wits = tx
 
     txIx   = maximum $ 0 : map (+ 1) [ ix | TxIn txId (TxIx ix) <- Map.keys $ unUTxO utxos, txId == dummyTxId ]
     txIn   = TxIn dummyTxId (TxIx txIx)
     input  = toShelleyTxIn txIn
-    inputs' = Set.insert input btbInputs
+    inputs' = Set.insert input ctbSpendInputs
 
     txOut  = makeTxOut addr value TxOutDatumNone ReferenceScriptNone
     utxos' = UTxO . Map.insert txIn txOut . unUTxO $ utxos
 
-    scriptInEra = ScriptInEra SimpleScriptInBabbage
+    scriptInEra = ScriptInEra SimpleScriptInConway
                   (SimpleScript script)
     newScript = toShelleyScript @Era scriptInEra
     scripts'  = scripts ++ [newScript]
@@ -261,13 +260,13 @@ applyTxMod tx utxos (AddSimpleScriptInput script value) =
     addr = scriptAddressAny $ hashScript (SimpleScript script)
 
 applyTxMod tx utxos (ChangeOutput ix maddr mvalue mdatum) =
-    (Tx (ShelleyTxBody era body{Ledger.btbOutputs = outputs'} scripts scriptData' auxData validity) wits, utxos)
+    (Tx (ShelleyTxBody era body{Ledger.ctbOutputs = outputs'} scripts scriptData' auxData validity) wits, utxos)
   where
     TxIx (fromIntegral -> idx) = ix
-    Tx bdy@(ShelleyTxBody era body@Ledger.BabbageTxBody{..} scripts scriptData auxData validity) wits = tx
+    Tx bdy@(ShelleyTxBody era body@Ledger.ConwayTxBody{..} scripts scriptData auxData validity) wits = tx
     TxBody (TxBodyContent{txOuts=txOuts}) = bdy
     TxOut (AddressInEra _ (toAddressAny -> addr)) (txOutValueToValue -> value) datum rscript = txOuts !! idx
-    (outputsStart, _ Seq.:<| outputsEnd) = Seq.splitAt idx btbOutputs
+    (outputsStart, _ Seq.:<| outputsEnd) = Seq.splitAt idx ctbOutputs
     outputs' = outputsStart Seq.>< (CBOR.mkSized (eraProtVerLow @LedgerEra) out Seq.:<| outputsEnd)
     out = toShelleyTxOut shelleyBasedEra (makeTxOut (fromMaybe addr maddr)
                                                     (fromMaybe value mvalue)
@@ -307,7 +306,7 @@ applyTxMod tx utxos (ChangeInput txIn maddr mvalue mdatum) =
 applyTxMod tx utxos (ChangeScriptInput txIn mvalue mdatum mredeemer) =
     (Tx (ShelleyTxBody era body scripts scriptData' auxData validity) wits, utxos')
   where
-    Tx (ShelleyTxBody era body@Ledger.BabbageTxBody{..} scripts scriptData auxData validity) wits = tx
+    Tx (ShelleyTxBody era body@Ledger.ConwayTxBody{..} scripts scriptData auxData validity) wits = tx
     (addr, value, utxoDatum, rscript) = case Map.lookup txIn $ unUTxO utxos of
       Just (TxOut addr (txOutValueToValue -> value) utxoDatum rscript) ->
         (addr, value, utxoDatum, rscript)
@@ -338,7 +337,7 @@ applyTxMod tx utxos (ChangeScriptInput txIn mvalue mdatum mredeemer) =
 
     utxos' = UTxO . Map.insert txIn txOut . unUTxO $ utxos
 
-    idx = case Ledger.indexOf (Ledger.AsItem (toShelleyTxIn txIn)) btbInputs of
+    idx = case Ledger.indexOf (Ledger.AsItem (toShelleyTxIn txIn)) ctbSpendInputs of
       SJust (Ledger.AsIndex idx) -> idx
       _                          -> error "The impossible happened!"
 
