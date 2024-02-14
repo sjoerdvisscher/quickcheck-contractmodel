@@ -180,7 +180,7 @@ prettyUpperBound (TxValidityUpperBound _ (Just slot)) = text (show $ unSlotNo sl
 prettyTxModifier :: TxModifier -> Doc
 prettyTxModifier (TxModifier txmod) = vcat [prettyMod mod | mod <- txmod]
   where
-    prettyPlutusScript = prettyHash . hashScript . PlutusScript PlutusScriptV2
+    prettyPlutusScript = prettyHash . hashScript . PlutusScript PlutusScriptV3
     prettySimpleScript = prettyHash . hashScript . SimpleScript
 
     maybeBlock _ _ _ Nothing   = empty

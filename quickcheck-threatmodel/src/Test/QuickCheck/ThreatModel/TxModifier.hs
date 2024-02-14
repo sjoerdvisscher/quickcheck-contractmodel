@@ -106,7 +106,7 @@ data TxMod where
   AddOutput :: AddressAny -> Value -> Datum -> TxMod
   AddInput  :: AddressAny -> Value -> Datum -> TxMod
 
-  AddPlutusScriptInput :: PlutusScript PlutusScriptV2
+  AddPlutusScriptInput :: PlutusScript PlutusScriptV3
                        -> Value
                        -> Datum
                        -> Redeemer
@@ -209,8 +209,8 @@ applyTxMod tx utxos (AddPlutusScriptInput script value datum redeemer) =
     txOut  = makeTxOut addr value datum ReferenceScriptNone
     utxos' = UTxO . Map.insert txIn txOut . unUTxO $ utxos
 
-    scriptInEra = ScriptInEra PlutusScriptV2InConway
-                  (PlutusScript PlutusScriptV2 script)
+    scriptInEra = ScriptInEra PlutusScriptV3InConway
+                  (PlutusScript PlutusScriptV3 script)
     newScript = toShelleyScript @Era scriptInEra
     scripts'  = scripts ++ [newScript]
 
@@ -228,7 +228,7 @@ applyTxMod tx utxos (AddPlutusScriptInput script value datum redeemer) =
     scriptData' = addScriptData idx datum' (toAlonzoData $ unsafeHashableScriptData redeemer, toAlonzoExUnits $ ExecutionUnits 0 0)
                 $ recomputeScriptData Nothing idxUpdate scriptData
 
-    hash = hashScript $ PlutusScript PlutusScriptV2 script
+    hash = hashScript $ PlutusScript PlutusScriptV3 script
     addr = scriptAddressAny hash
 
 applyTxMod tx utxos (AddSimpleScriptInput script value) =
@@ -364,7 +364,7 @@ removeInput :: Input -> TxModifier
 removeInput inp = txMod $ RemoveInput $ inputTxIn inp
 
 -- | Add a plutus script input.
-addPlutusScriptInput :: PlutusScript PlutusScriptV2 -> Value -> Datum -> Redeemer -> TxModifier
+addPlutusScriptInput :: PlutusScript PlutusScriptV3 -> Value -> Datum -> Redeemer -> TxModifier
 addPlutusScriptInput script value datum redeemer = txMod $ AddPlutusScriptInput script value datum redeemer
 
 -- | Add a simple script input.
