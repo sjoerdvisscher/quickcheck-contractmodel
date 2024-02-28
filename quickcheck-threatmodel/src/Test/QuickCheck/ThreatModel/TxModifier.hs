@@ -4,12 +4,14 @@ module Test.QuickCheck.ThreatModel.TxModifier where
 import Cardano.Api
 import Cardano.Api.Shelley
 import Cardano.Ledger.Alonzo.TxWits qualified as Ledger
+import Cardano.Ledger.Alonzo.TxBody qualified as Ledger
+import Cardano.Ledger.Alonzo.Scripts qualified as Ledger
+import Cardano.Ledger.Conway.Scripts qualified as Ledger
 import Cardano.Ledger.Conway.TxBody qualified as Ledger
 import Cardano.Ledger.Binary qualified as CBOR
 import Cardano.Ledger.Api.Era (eraProtVerLow)
 import Data.Coerce
 
-import Cardano.Ledger.Alonzo.Scripts qualified as Ledger
 import Data.Map qualified as Map
 import Data.Maybe
 import Data.Maybe.Strict
@@ -316,7 +318,7 @@ applyTxMod tx utxos (ChangeScriptInput txIn mvalue mdatum mredeemer) =
       TxBodyNoScriptData -> error "No script data available"
       TxBodyScriptData _ (Ledger.TxDats dats) (Ledger.Redeemers rdmrs) ->
         (fromJust $ Map.lookup utxoDatumHash dats,
-         fromJust $ Map.lookup (Ledger.AlonzoSpending (Ledger.AsIndex idx)) rdmrs)
+         fromJust $ Map.lookup (Ledger.ConwaySpending (Ledger.AsIndex idx)) rdmrs)
 
     utxoDatumHash = case utxoDatum of
       TxOutDatumNone       -> error "No existing datum"
